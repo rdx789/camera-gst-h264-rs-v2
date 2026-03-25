@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>WebRTC stream</title>
+  <style>
+    * { margin: 0; box-sizing: border-box; }
+    body { background: #111; display: flex; flex-direction: column;
+           align-items: center; justify-content: center;
+           min-height: 100vh; gap: 12px; font-family: monospace; }
+    video  { width: 100%; max-width: 1280px; border-radius: 8px; background: #000; }
+    #status { color: #888; font-size: 13px; }
+    #stats  { color: #555; font-size: 11px; }
+    button { padding: 8px 24px; border-radius: 6px; border: none;
+             background: #378ADD; color: #fff; font-size: 14px; cursor: pointer; }
+    button.stop { background: #C0392B; }
+  </style>
+</head>
+<body>
+  <video id="video" autoplay muted playsinline></video>
+  <button id="btn" onclick="toggle()">Start stream</button>
+  <div id="status">Idle</div>
+  <div id="stats"></div>
+
+  <script>
+    const status = document.getElementById('status');
+    const stats  = document.getElementById('stats');
+    const video  = document.getElementById('video');
+    const btn    = document.getElementById('btn');
+
+    let reconnectDelay = 1000;  // ms, doubles on each failure up to 30 s
+    let stopped = false;        // true when user explicitly stopped
+    let activeWs = null;
+    let activePc = null;
+
+    function setButton(isLive) {
+      btn.textContent = isLive ? 'Stop stream' : 'Start stream';
+      btn.classList.toggle('stop', isLive);
+    }
+
+    function toggle() {
+      if (activePc) {
+        // User pressed Stop — close everything and disable reconnect.
+        stopped = true;
+        activeWs?.close();
+        activePc.close();
+        activeWs = null;
+        activePc = null;
+        video.srcObject = null;
+        stats.textContent = '';
+        status.textContent = 'Idle';
+        setButton(false);
+      } else {
+        stopped = false;
+        reconnectDelay = 1000;
+        start();
+      }
+    }
+
+    async function start() {
+      status.textContent = 'Connecting…';
+
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+      activePc = pc;
+
+      pc.ontrack = e => {
+        console.log('[webrtc] ontrack fired, streams:', e.streams.length);
+        video.srcObject = e.streams[0] ?? null;
+        status.textContent = 'Live';
+        reconnectDelay = 1000;  // reset backoff on successful stream
+        setButton(true);
+      };
+
+      let statsInterval = null;
+
+      pc.oniceconnectionstatechange = () => {
+        console.log('[webrtc] ICE:', pc.iceConnectionState);
+        if (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed') {
+          status.textContent = 'ICE: ' + pc.iceConnectionState;
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log('[webrtc] connection state:', pc.connectionState);
+        if (pc.connectionState === 'connected') {
+          status.textContent = 'Live';
+          setButton(true);
+          if (!statsInterval) statsInterval = pollStats(pc);
+        }
+      };
+
+      pc.addTransceiver('video', { direction: 'recvonly' });
+
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(`${proto}://${location.host}/ws`);
+      activeWs = ws;
+
+      ws.onopen = async () => {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        ws.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
+      };
+
+      ws.onmessage = async ({ data }) => {
+        const msg = JSON.parse(data);
+        if (msg.type === 'answer') {
+          try {
+            await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
+            console.log('[webrtc] setRemoteDescription ok');
+          } catch (e) {
+            console.error('[webrtc] setRemoteDescription failed:', e);
+            status.textContent = 'SDP error: ' + e.message;
+          }
+        } else if (msg.type === 'candidate') {
+          try { await pc.addIceCandidate(msg.candidate); } catch {}
+        }
+      };
+
+      pc.onicecandidate = ({ candidate }) => {
+        if (candidate) ws.send(JSON.stringify({
+          type: 'candidate',
+          candidate: candidate.toJSON()
+        }));
+      };
+
+      const reconnect = () => {
+        if (statsInterval) { clearInterval(statsInterval); statsInterval = null; }
+        pc.close();
+        activePc = null;
+        activeWs = null;
+        setButton(false);
+        if (stopped) return;  // user stopped — don't reconnect
+        status.textContent = `Disconnected — reconnecting in ${reconnectDelay / 1000}s…`;
+        setTimeout(start, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+      };
+
+      ws.onerror = () => status.textContent = 'WS error';
+      ws.onclose = reconnect;
+    }
+
+    function pollStats(pc) {
+      return setInterval(async () => {
+        const report = await pc.getStats();
+        report.forEach(s => {
+          if (s.type === 'inbound-rtp' && s.kind === 'video') {
+            stats.textContent =
+              `frames: ${s.framesDecoded}  lost: ${s.packetsLost}  jitter: ${(s.jitter*1000).toFixed(1)}ms`;
+          }
+        });
+      }, 1000);
+    }
+  </script>
+</body>
+</html>
