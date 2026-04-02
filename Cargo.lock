@@ -350,6 +350,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
+name = "camera-gst-h264-rs-v2"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "bytes",
+ "crossbeam-channel",
+ "dashmap",
+ "gstreamer",
+ "gstreamer-app",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "num_cpus",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "webrtc",
+]
+
+[[package]]
 name = "cbc"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2252,31 +2277,6 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
-
-[[package]]
-name = "sample-camera-h264-ws-rs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "bytes",
- "crossbeam-channel",
- "dashmap",
- "gstreamer",
- "gstreamer-app",
- "metrics",
- "metrics-exporter-prometheus",
- "num_cpus",
- "rustls",
- "serde",
- "serde_json",
- "tokio",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "webrtc",
-]
 
 [[package]]
 name = "schannel"
